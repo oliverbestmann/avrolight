@@ -130,9 +130,9 @@ def speed_avrolight_read():
 
 
 if __name__ == '__main__':
-    speed_avro_read()
-    speed_avro_write()
     speed_avrolight_read()
     speed_avrolight_write()
+    speed_avro_read()
+    speed_avro_write()
 
     nose.runmodule()

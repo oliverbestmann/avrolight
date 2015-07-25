@@ -14,7 +14,7 @@ def write_boolean(out, value):
 
 def write_long(out, value):
     value = (value << 1) ^ (value >> 63)
-    while (value & ~0x7F) != 0:
+    while value & ~0x7F:
         out.append((value & 0x7f) | 0x80)
         value >>= 7
 
@@ -42,7 +42,7 @@ def write_crc32(out, value):
     struct.pack(">I", binascii.crc32(value) & 0xffffffff)
 
 
-def read_null(input):
+def read_null(fp):
     return None
 
 
@@ -56,15 +56,14 @@ def read_boolean(fp):
 
 def read_long(fp):
     b = read_byte(fp)
-
     n = b & 0x7F
     shift = 7
-    while (b & 0x80) != 0:
+    while b & 0x80:
         b = read_byte(fp)
         n |= (b & 0x7F) << shift
         shift += 7
 
-    return ((n >> 1) ^ -(n & 1))
+    return (n >> 1) ^ -(n & 1)
 
 
 def read_float(fp):
@@ -85,6 +84,27 @@ def read_string(fp):
 
 def read_crc32(fp):
     return struct.unpack(">I", fp.read(4))
+
+
+def read_blocks(read_item, fp):
+    def read_one_block():
+        count = read_long(fp)
+        if count < 0:
+            count = abs(count)
+            _ = read_long(fp)
+
+        items = []
+        for idx in range(count):
+            items.append(read_item())
+
+        return items
+
+    while True:
+        items = read_one_block()
+        if not items:
+            break
+
+        yield from items
 
 
 PRIMITIVE_READERS = {
@@ -128,7 +148,7 @@ class Writer(object):
         })
 
     def write_any(self, schema, out, value):
-        if isinstance(schema, (str, list, tuple)):
+        if not isinstance(schema, dict):
             schema = {"type": schema}
 
         elif "name" in schema:
@@ -158,18 +178,20 @@ class Writer(object):
 
     def write_array(self, schema, out, array):
         if array:
+            item_schema = schema["items"]
             write_long(out, len(array))
             for value in array:
-                self.write_any(schema["items"], out, value)
+                self.write_any(item_schema, out, value)
 
         write_long(out, 0)
 
     def write_map(self, schema, out, mapping):
         if mapping:
+            value_schema = schema["values"]
             write_long(out, len(mapping))
             for key, value in mapping.items():
                 write_string(out, key)
-                self.write_any(schema["values"], out, value)
+                self.write_any(value_schema, out, value)
 
         write_long(out, 0)
 
@@ -188,34 +210,34 @@ class Writer(object):
         return bytes(buffer)
 
 
-TYPES = [
-    (float, "float"),
-    (float, "double"),
+TYPES = (
+    (dict, "record"),
     (int, "int"),
     (int, "long"),
-    (dict, "record"),
+    (str, "string"),
+    (float, "float"),
+    (float, "double"),
     (dict, "map"),
     (list, "array"),
     (tuple, "array"),
-    (str, "string"),
     (str, "enum"),
     (bytes, "bytes")
-]
+)
 
 
 # noinspection PyShadowingBuiltins
 def choose_union_type(union, value):
-    union_types = [
-        type["type"] if isinstance(type, dict) else type
-        for type in union
-    ]
+    if value is None and "null" in union:
+        return union.index("null"), "null"
 
-    if value is None and "null" in union_types:
-        return union_types.index("null"), "null"
+    union_types = {
+        type["type"] if isinstance(type, dict) else type: idx
+        for idx, type in enumerate(union)
+    }
 
     for type, type_name in TYPES:
         if type_name in union_types and isinstance(value, type):
-            index = union_types.index(type_name)
+            index = union_types[type_name]
             return index, union[index]
 
     raise ValueError("Could not guess union value type")
@@ -244,27 +266,8 @@ class Reader(object):
 
         return result
 
-    def read_blocks(self, read_item, fp):
-        def read_one_block():
-            count = read_long(fp)
-            if count < 0:
-                count = abs(count)
-                _ = read_long(fp)
-
-            for idx in range(count):
-                yield read_item()
-
-        result = []
-        while True:
-            items = list(read_one_block())
-            result.extend(items)
-            if not items:
-                break
-
-        return result
-
     def read_array(self, schema, fp):
-        return self.read_blocks(partial(self.read_any, schema["items"], fp), fp)
+        return list(read_blocks(partial(self.read_any, schema["items"], fp), fp))
 
     def read_map(self, schema, fp):
         item_schema = schema["values"]
@@ -274,7 +277,7 @@ class Reader(object):
             value = self.read_any(item_schema, fp)
             return name, value
 
-        return dict(self.read_blocks(read_entry, fp))
+        return dict(read_blocks(read_entry, fp))
 
     # noinspection PyMethodMayBeStatic
     def read_enum(self, schema, fp):
@@ -286,7 +289,7 @@ class Reader(object):
         return fp.read(schema["size"])
 
     def read_any(self, schema, fp):
-        if isinstance(schema, (str, list, tuple)):
+        if not isinstance(schema, dict):
             schema = {"type": schema}
 
         elif "name" in schema:
