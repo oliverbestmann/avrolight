@@ -6,11 +6,11 @@ import time
 import avro
 import avro.io
 import avro.schema
+import avro.datafile
 from hamcrest import *
 import nose
 
 import avrolight
-
 
 SCHEMAS_TO_VALIDATE = (
     ('"null"', None),
@@ -65,16 +65,49 @@ def avro_write_datum(datum, writer_schema):
 def test_read():
     for schema, value in SCHEMAS_TO_VALIDATE:
         bytes = avro_write_datum(value, avro.schema.Parse(schema))
-
         schema = json.loads(schema)
-
-        print(schema, repr(value))
-        assert_that(avrolight.write(schema, value), equal_to(bytes))
-
         assert_that(avrolight.read(schema, bytes), equal_to(value))
 
 
-def timeit(name, runs=1000000):
+def test_write():
+    for schema, value in SCHEMAS_TO_VALIDATE:
+        bytes = avro_write_datum(value, avro.schema.Parse(schema))
+        schema = json.loads(schema)
+
+        fp = io.BytesIO()
+        avrolight.write(schema, fp, value)
+        assert_that(fp.getvalue(), equal_to(bytes))
+
+
+def test_read_container_file():
+    for schema, value in SCHEMAS_TO_VALIDATE:
+        writer = io.BytesIO()
+        datum_writer = avro.io.DatumWriter(avro.schema.Parse(schema))
+        container = avro.datafile.DataFileWriter(writer, datum_writer, avro.schema.Parse(schema))
+
+        for _ in range(10):
+            container.append(value)
+
+        container.flush()
+
+        values = list(avrolight.read_container(io.BytesIO(writer.getvalue())))
+        assert_that(values, has_length(10))
+        assert_that(values[0], equal_to(value))
+
+
+def test_write_container_file():
+    for schema, value in SCHEMAS_TO_VALIDATE:
+        fp = io.BytesIO()
+        with avrolight.ContainerWriter(fp, json.loads(schema)) as writer:
+            for _ in range(10):
+                writer.write(value)
+
+        values = list(avrolight.read_container(io.BytesIO(fp.getvalue())))
+        assert_that(values, has_length(10))
+        assert_that(values[0], equal_to(value))
+
+
+def timeit(name, runs=100000):
     start = time.time()
     for _ in range(runs):
         yield
@@ -114,25 +147,29 @@ def speed_avrolight_write():
     schema, value = SCHEMAS_TO_VALIDATE[-1]
     parsed_schema = json.loads(schema)
 
-    for _ in timeit("avro, writing"):
-        avrolight.write(parsed_schema, value)
+    for _ in timeit("avrolight, writing"):
+        avrolight.write(parsed_schema, io.BytesIO(), value)
 
 
 def speed_avrolight_read():
     gc.disable()
 
     schema, value = SCHEMAS_TO_VALIDATE[-1]
-    parsed_schema = json.loads(schema)
-    bytes = avrolight.write(parsed_schema, value)
+    parsed_schema = avrolight.Schema(json.loads(schema))
 
-    for _ in timeit("avro, reading"):
-        avrolight.read(parsed_schema, bytes)
+    buffer = io.BytesIO()
+    avrolight.write(parsed_schema, buffer, value)
+
+    for _ in timeit("avrolight, reading"):
+        avrolight.read(parsed_schema, buffer.getvalue())
 
 
-if __name__ == '__main__':
+def speed():
     speed_avrolight_read()
     speed_avrolight_write()
     speed_avro_read()
     speed_avro_write()
 
+
+if __name__ == '__main__':
     nose.runmodule()

@@ -1,37 +1,39 @@
 from functools import partial
-from io import BytesIO
 import struct
 import binascii
 
+from .schema import Schema
+
+BYTES = [bytearray((idx,)) for idx in range(256)]
 
 def write_null(out, value):
     pass
 
 
 def write_boolean(out, value):
-    out.append(1 if value else 0)
+    out.write(b"\x01" if value else b"\x00")
 
 
 def write_long(out, value):
     value = (value << 1) ^ (value >> 63)
     while value & ~0x7F:
-        out.append((value & 0x7f) | 0x80)
+        out.write(BYTES[(value & 0x7f) | 0x80])
         value >>= 7
 
-    out.append(value)
+    out.write(BYTES[value])
 
 
 def write_float(out, value):
-    out.extend(struct.pack(b"<f", value))
+    out.write(struct.pack(b"<f", value))
 
 
 def write_double(out, value):
-    out.extend(struct.pack(b"<d", value))
+    out.write(struct.pack(b"<d", value))
 
 
 def write_bytes(out, value):
     write_long(out, len(value))
-    out.extend(value)
+    out.write(value)
 
 
 def write_string(out, value):
@@ -47,7 +49,11 @@ def read_null(fp):
 
 
 def read_byte(fp):
-    return fp.read(1)[0]
+    value = fp.read(1)
+    if not value:
+        raise EOFError()
+
+    return value[0]
 
 
 def read_boolean(fp):
@@ -136,8 +142,7 @@ def remove_schema_parameter(func):
 
 class Writer(object):
     def __init__(self, schema):
-        self.types = {}
-        self.schema = schema
+        self.schema = schema if isinstance(schema, Schema) else Schema(schema)
 
         self.writers = dict({key: remove_schema_parameter(func) for key, func in PRIMITIVE_WRITERS.items()}, **{
             "record": self.write_record,
@@ -151,9 +156,6 @@ class Writer(object):
         if not isinstance(schema, dict):
             schema = {"type": schema}
 
-        elif "name" in schema:
-            self.types[schema["name"]] = schema
-
         field_type = schema["type"]
 
         # if it is a union field, read the type index first
@@ -162,8 +164,9 @@ class Writer(object):
             write_long(out, index)
             return self.write_any(field_type, out, value)
 
-        if field_type in self.types and field_type not in self.writers:
-            return self.write_any(self.types[field_type], out, value)
+        if field_type not in self.writers:
+            schema = self.schema.get_type_schema(field_type)
+            return self.write_any(schema, out, value)
 
         if field_type in self.writers:
             return self.writers[field_type](schema, out, value)
@@ -196,7 +199,7 @@ class Writer(object):
         write_long(out, 0)
 
     def write_fixed(self, schema, out, value):
-        out.extend(value)
+        out.write(value)
         if len(value) != schema["size"]:
             raise ValueError("Invalid length for 'write fixed'")
 
@@ -204,10 +207,8 @@ class Writer(object):
         index = schema["symbols"].index(value)
         write_long(out, index)
 
-    def write(self, value):
-        buffer = bytearray()
-        self.write_any(self.schema, buffer, value)
-        return bytes(buffer)
+    def write(self, fp, value):
+        self.write_any(self.schema.start, fp, value)
 
 
 TYPES = (
@@ -245,8 +246,7 @@ def choose_union_type(union, value):
 
 class Reader(object):
     def __init__(self, schema):
-        self.types = {}
-        self.schema = schema
+        self.schema = schema if isinstance(schema, Schema) else Schema(schema)
 
         self.reader = dict({key: remove_schema_parameter(func) for key, func in PRIMITIVE_READERS.items()}, **{
             "record": self.read_record,
@@ -292,9 +292,6 @@ class Reader(object):
         if not isinstance(schema, dict):
             schema = {"type": schema}
 
-        elif "name" in schema:
-            self.types[schema["name"]] = schema
-
         field_type = schema["type"]
 
         # if it is a union field, read the type index first
@@ -302,14 +299,14 @@ class Reader(object):
             index = read_long(fp)
             return self.read_any(field_type[index], fp)
 
-        if field_type in self.types and field_type not in self.reader:
-            return self.read_any(self.types[field_type], fp)
+        if field_type not in self.reader:
+            schema = self.schema.get_type_schema(field_type)
+            return self.read_any(schema, fp)
 
         if field_type in self.reader:
             return self.reader[field_type](schema, fp)
         else:
             raise ValueError("Invalid field type: {}".format(field_type))
 
-    def read(self, bytes):
-        return self.read_any(self.schema, BytesIO(bytes))
-
+    def read(self, fp):
+        return self.read_any(self.schema.json, fp)
