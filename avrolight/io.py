@@ -110,7 +110,8 @@ def read_blocks(read_item, fp):
         if not items:
             break
 
-        yield from items
+        for item in items:
+            yield item
 
 
 PRIMITIVE_READERS = {
