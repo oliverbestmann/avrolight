@@ -16,17 +16,8 @@ HEADER_SCHEMA = {
 }
 
 
-def read_container(fp):
-    header = Reader(HEADER_SCHEMA).read(fp)
-    if header["magic"] != b"Obj\x01":
-        raise IOError("Not a valid avro container file")
-
-    sync_marker = header["sync"]
-
-    # parse the schema from the header
-    schema = json.loads(header["meta"]["avro.schema"].decode("utf8"))
+def _iter_records(fp, schema, sync_marker):
     reader = Reader(schema)
-
     while True:
         try:
             count = read_long(fp)
@@ -41,6 +32,25 @@ def read_container(fp):
 
         if fp.read(16) != sync_marker:
             raise IOError("sync marker expected")
+
+
+class read_container(object):
+    def __init__(self, fp):
+        self.fp = fp
+
+        header = Reader(HEADER_SCHEMA).read(fp)
+        if header["magic"] != b"Obj\x01":
+            raise IOError("Not a valid avro container file")
+
+        self.sync_marker = header["sync"]
+
+        # parse the schema from the header
+        self.schema_bytes = header["meta"]["avro.schema"]
+        self.schema = json.loads(self.schema_bytes.decode("utf8"))
+        self._records = _iter_records(fp, self.schema, self.sync_marker)
+
+    def __iter__(self):
+        return self._records
 
 
 def append_to_container(fp):
@@ -110,3 +120,5 @@ class ContainerWriter(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.flush()
+
+    close = flush

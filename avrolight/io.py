@@ -164,7 +164,7 @@ class Writer(object):
             write_long(out, index)
             return self.write_any(field_type, out, value)
 
-        if field_type not in self.writers:
+        if isinstance(field_type, str) and field_type not in self.writers:
             schema = self.schema.get_type_schema(field_type)
             return self.write_any(schema, out, value)
 

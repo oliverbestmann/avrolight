@@ -1,5 +1,10 @@
+from json import loads
+
 class Schema(object):
     def __init__(self, json):
+        if isinstance(json, str) and json[0] in "{[":
+            json = loads(json)
+
         self.json = json
         self.types = {}
 
