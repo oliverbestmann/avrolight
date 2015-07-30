@@ -34,7 +34,20 @@ def _iter_records(fp, schema, sync_marker):
             raise IOError("sync marker expected")
 
 
-class read_container(object):
+class ContainerReader(object):
+    """Class to read a avro container file.
+
+    This reads a avro container file. The reader acts as an iterator to iterate
+    over all records in the container. Also it exposes the schema of the
+    container file to the user. Use it like this:
+
+        with open("file.avro", "rb") as fp:
+            reader = ContainerReader(fp)
+            print(reader.schema)
+            for record in reader:
+                print(record)
+
+    """
     def __init__(self, fp):
         self.fp = fp
 
@@ -47,26 +60,31 @@ class read_container(object):
         # parse the schema from the header
         self.schema_bytes = header["meta"]["avro.schema"]
         self.schema = json.loads(self.schema_bytes.decode("utf8"))
+
+        # create generator for the file
         self._records = _iter_records(fp, self.schema, self.sync_marker)
 
     def __iter__(self):
         return self._records
 
 
+def read_container(fp):
+    """Returns a new :class:`avrolight.container.ContainerReader` instance."""
+    return ContainerReader(fp)
+
 def append_to_container(fp):
-    # read the header to get the schema
-    header = Reader(HEADER_SCHEMA).read(fp)
-    if header["magic"] != b"Obj\x01":
-        raise IOError("Not a valid avro container file")
+    """Appends records to an already existing container.
 
-    # the info from the file
-    schema = json.loads(header["meta"]["avro.schema"].decode("utf8"))
-    sync_marker = header["sync"]
+    This will first read the schema from the container and then
+    return a :class:`avro.container.ContainerWriter` that writes data to the end
+    of the file-like object.
+    """
+    # read data from existing container
+    reader = ContainerReader(fp)
 
-    # move to the end of the file
+    # create writer at the end of the file
     fp.seek(0, os.SEEK_END)
-
-    return ContainerWriter(fp, schema, sync_marker=sync_marker)
+    return ContainerWriter(fp, reader.schema, sync_marker=reader.sync_marker)
 
 
 class ContainerWriter(object):
@@ -80,16 +98,18 @@ class ContainerWriter(object):
         self.buffer = BytesIO()
 
     def write_header(self):
-        header = {
+        assert not self.header_written, "Header is already written once"
+
+        Writer(HEADER_SCHEMA).write(self.fp, {
             "magic": b"Obj\x01",
             "meta": {
-                "avro.schema": json.dumps(self.writer.schema.json).encode("utf8"),
+                "avro.schema": json.dumps(self.schema.json).encode("utf8"),
                 "avro.codec": b"null"
             },
             "sync": self.sync_marker
-        }
+        })
 
-        Writer(HEADER_SCHEMA).write(self.fp, header)
+        self.header_written = True
 
     def write(self, message):
         self.writer.write(self.buffer, message)
@@ -114,6 +134,11 @@ class ContainerWriter(object):
 
         self.records = 0
         self.buffer = BytesIO()
+
+    @property
+    def schema(self):
+        """Returns the :class:`avrolight.schema.Schema` instance that this writer uses."""
+        return self.writer.schema
 
     def __enter__(self):
         return self

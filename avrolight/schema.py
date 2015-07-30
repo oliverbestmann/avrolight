@@ -2,6 +2,7 @@ from json import loads
 
 class Schema(object):
     def __init__(self, json):
+        """Parses a new schema from a json encoded string or from a map."""
         if isinstance(json, str) and json[0] in "{[":
             json = loads(json)
 
@@ -9,6 +10,15 @@ class Schema(object):
         self.types = {}
 
         self._register_types()
+
+    def get_type_schema(self, name):
+        """Gets the schema for a type name"""
+        return self.types[name.lstrip(".")]
+
+    @property
+    def toplevel_type(self):
+        """The toplevel type of this schema"""
+        return self.json
 
     def _register_types(self):
         def _walk_list(schemata):
@@ -30,10 +40,3 @@ class Schema(object):
 
     def _register_type(self, name, schema):
         self.types[name.lstrip(".")] = schema
-
-    def get_type_schema(self, name):
-        return self.types[name.lstrip(".")]
-
-    @property
-    def start(self):
-        return self.json

@@ -1,3 +1,7 @@
+"""
+This file contains functions to read and write avro packed data.
+"""
+
 from functools import partial
 import struct
 import binascii
@@ -138,11 +142,18 @@ PRIMITIVE_WRITERS = {
 
 
 def remove_schema_parameter(func):
+    """Removes the first parameter from a method invocation."""
     return lambda schema, *args: func(*args)
 
 
 class Writer(object):
     def __init__(self, schema):
+        """Creates a new writer for avro packed messages.
+
+        To create a new writer you need to provide a schema for the file to write.
+        The schema could be a :class:`avrolight.schema.Schema` instance. If not, it will be
+        given to the constructor of :class:`avrolight.schema.Schema`.
+        """
         self.schema = schema if isinstance(schema, Schema) else Schema(schema)
 
         self.writers = dict({key: remove_schema_parameter(func) for key, func in PRIMITIVE_WRITERS.items()}, **{
@@ -152,6 +163,14 @@ class Writer(object):
             "map": self.write_map,
             "enum": self.write_enum
         })
+
+    def write(self, fp, value):
+        """Serializes an object using this writer.
+
+        The object is serialized and written to the given file-like object. The value
+        must match the schema of this writer.
+        """
+        self.write_any(self.schema.toplevel_type, fp, value)
 
     def write_any(self, schema, out, value):
         if not isinstance(schema, dict):
@@ -208,9 +227,6 @@ class Writer(object):
         index = schema["symbols"].index(value)
         write_long(out, index)
 
-    def write(self, fp, value):
-        self.write_any(self.schema.start, fp, value)
-
 
 TYPES = (
     (dict, "record"),
@@ -247,6 +263,10 @@ def choose_union_type(union, value):
 
 class Reader(object):
     def __init__(self, schema):
+        """Initializes a new reader from a schema.
+
+        See :class:`avrolight.io.Writer` for more information about schema handling
+        """
         self.schema = schema if isinstance(schema, Schema) else Schema(schema)
 
         self.reader = dict({key: remove_schema_parameter(func) for key, func in PRIMITIVE_READERS.items()}, **{
@@ -256,6 +276,10 @@ class Reader(object):
             "fixed": self.read_fixed,
             "map": self.read_map
         })
+
+    def read(self, fp):
+        """Reads one value using :attr:`schema` from the given file-like object."""
+        return self.read_any(self.schema.toplevel_type, fp)
 
     def read_record(self, schema, fp):
         result = {}
@@ -308,6 +332,3 @@ class Reader(object):
             return self.reader[field_type](schema, fp)
         else:
             raise ValueError("Invalid field type: {}".format(field_type))
-
-    def read(self, fp):
-        return self.read_any(self.schema.json, fp)
