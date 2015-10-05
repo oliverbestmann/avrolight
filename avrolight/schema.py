@@ -1,3 +1,5 @@
+from cached_property import cached_property
+
 import avrolight.json
 
 class Schema(object):
@@ -48,3 +50,7 @@ class Schema(object):
             self._str = avrolight.json.dumps(self.json)
 
         return self._str
+
+    @cached_property
+    def as_bytes(self):
+        return str(self).encode()
