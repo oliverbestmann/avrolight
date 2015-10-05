@@ -1,14 +1,16 @@
-from json import loads
+import avrolight.json
 
 class Schema(object):
     def __init__(self, json):
         """Parses a new schema from a json encoded string or from a map."""
         if isinstance(json, str) and json[0] in "{[":
-            json = loads(json)
+            self._str = json
+            self.json = avrolight.json.loads(json)
+        else:
+            self._str = None
+            self.json = json
 
-        self.json = json
         self.types = {}
-
         self._register_types()
 
     def get_type_schema(self, name):
@@ -40,3 +42,9 @@ class Schema(object):
 
     def _register_type(self, name, schema):
         self.types[name.lstrip(".")] = schema
+
+    def __str__(self):
+        if self._str is None:
+            self._str = avrolight.json.dumps(self.json)
+
+        return self._str

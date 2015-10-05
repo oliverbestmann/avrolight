@@ -2,13 +2,14 @@
 This file contains functions to read and write avro packed data.
 """
 
+import binascii
 from functools import partial
 import struct
-import binascii
 
-from .schema import Schema
+from avrolight.schema import Schema
 
 BYTES = [bytearray((idx,)) for idx in range(256)]
+
 
 def write_null(out, value):
     pass
@@ -332,3 +333,4 @@ class Reader(object):
             return self.reader[field_type](schema, fp)
         else:
             raise ValueError("Invalid field type: {}".format(field_type))
+

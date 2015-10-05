@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name="avrolight",
-      version="1.0.1",
+      version="1.0.2",
       description="A light and fast implementation of the avro message format",
       author="Oliver Bestmann",
       author_email="oliver.bestmann@googlemail.com",

@@ -1,14 +1,15 @@
-__author__ = 'Oliver Bestmann'
+import json
 
 from io import BytesIO
 
-from .io import Reader, Writer
-from .container import read_container
-from .container import ContainerWriter
-from .container import append_to_container
-from .schema import Schema
+from avrolight.io import Reader, Writer
+from avrolight.container import read_container
+from avrolight.container import ContainerWriter
+from avrolight.container import append_to_container
+from avrolight.schema import Schema
 
 __all__ = ("Reader", "Writer", "read", "write", "read_container", "ContainerWriter", "Schema", "append_to_container")
+
 
 def read(schema, fp):
     if isinstance(fp, bytes):

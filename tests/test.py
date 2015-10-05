@@ -3,14 +3,11 @@ import io
 import gc
 import time
 
-import avro
-import avro.io
-import avro.schema
-import avro.datafile
 from hamcrest import *
 import nose
 
 import avrolight
+from avrolight.schema import Schema
 
 SCHEMAS_TO_VALIDATE = (
     ('"null"', None),
@@ -55,6 +52,8 @@ SCHEMAS_TO_VALIDATE = (
 
 
 def avro_write_datum(datum, writer_schema):
+    import avro.io
+
     writer = io.BytesIO()
     encoder = avro.io.BinaryEncoder(writer)
     datum_writer = avro.io.DatumWriter(writer_schema)
@@ -63,6 +62,7 @@ def avro_write_datum(datum, writer_schema):
 
 
 def test_read():
+    import avro.schema
     for schema, value in SCHEMAS_TO_VALIDATE:
         bytes = avro_write_datum(value, avro.schema.Parse(schema))
         schema = json.loads(schema)
@@ -70,6 +70,7 @@ def test_read():
 
 
 def test_write():
+    import avro.schema
     for schema, value in SCHEMAS_TO_VALIDATE:
         bytes = avro_write_datum(value, avro.schema.Parse(schema))
         schema = json.loads(schema)
@@ -80,6 +81,9 @@ def test_write():
 
 
 def test_read_container_file():
+    import avro.io
+    import avro.schema
+    import avro.datafile
     for schema, value in SCHEMAS_TO_VALIDATE:
         writer = io.BytesIO()
         datum_writer = avro.io.DatumWriter(avro.schema.Parse(schema))
@@ -107,6 +111,11 @@ def test_write_container_file():
         assert_that(values[0], equal_to(value))
 
 
+def test_schema_str():
+    schema = Schema('{"type": "int"}')
+    assert_that(str(schema), '{"type": "int"}')
+
+
 def timeit(name, runs=100000):
     start = time.time()
     for _ in range(runs):
@@ -117,6 +126,8 @@ def timeit(name, runs=100000):
 
 
 def speed_avro_write():
+    import avro.io
+    import avro.schema
     gc.disable()
 
     schema, value = SCHEMAS_TO_VALIDATE[-1]
@@ -129,6 +140,8 @@ def speed_avro_write():
 
 
 def speed_avro_read():
+    import avro.io
+    import avro.schema
     gc.disable()
 
     schema, value = SCHEMAS_TO_VALIDATE[-1]

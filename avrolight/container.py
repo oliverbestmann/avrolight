@@ -2,8 +2,9 @@ import json
 import os
 from io import BytesIO
 
-from .io import Reader, read_long
-from .io import Writer, write_long
+from avrolight.io import Reader, read_long
+from avrolight.io import Writer, write_long
+import avrolight.json as json
 
 HEADER_SCHEMA = {
     "type": "record",
