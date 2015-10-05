@@ -8,5 +8,5 @@ setup(name="avrolight",
       author="Oliver Bestmann",
       author_email="oliver.bestmann@googlemail.com",
       url="https://github.com/oliverbestmann/avrolight",
-      requires=["cached_property"],
+      install_requires=["cached_property"],
       packages=["avrolight"])
